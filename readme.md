@@ -3,9 +3,10 @@
 LKFCoder is a utility for encoding and decoding files of LKF format.
 
 ## Building
-The utility has no third-party dependencies and compiled on any platform, where the golang compiler is available. To do this, use the following command:
+The utility has no third-party dependencies and compiled on any platform, where the golang compiler is available. To do this, use the following commands:
 
-go build
+	go get github.com/kvark128/LKFCoder
+	go install LKFCoder
 
 ## Using
 The first argument of program specifies the required action: decode or encode.
