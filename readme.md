@@ -3,10 +3,9 @@
 LKFCoder is a utility for encoding and decoding files of LKF format.
 
 ## Building
-The utility has no third-party dependencies and compiled on any platform, where the golang compiler is available. To do this, use the following commands:
+The utility has no third-party dependencies and compiled on any platform, where the golang compiler is available. For get and install LKFCoder, run the following command:
 
 	go get github.com/kvark128/LKFCoder
-	go install LKFCoder
 
 ## Using
 The first argument of program specifies the required action: decode or encode.
@@ -20,6 +19,6 @@ The processed files are determined by extension. lkf are decoded to mp3 or mp3 a
 
 For example, if the book of the lkf format is located on the path C:\MyBook, then to convert it to the mp3 format, run the following command:
 
-LKFCoder decode C:\MyBook
+	LKFCoder decode C:\MyBook
 
 The result of the work is written to the source file, after which he changes extension.
