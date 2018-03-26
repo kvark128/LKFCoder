@@ -15,6 +15,7 @@ import (
 const (
 	blockSize = 128 // The block size in words. Every word of 32 bit
 	delta     = 0x9e3779b9
+	version   = "0.2" // Program version
 )
 
 // The 128-bit key for encrypting/decrypting lkf files. It is divided into 4 parts of 32 bit each.
@@ -118,22 +119,24 @@ func encode(path string, info os.FileInfo, err error) error {
 }
 
 func main() {
-	if len(os.Args) < 3 {
-		log.Fatal("Not specified action or path")
-	}
-
 	var err error
-	var action string = os.Args[1] // The desired action: encode or decode
-	var path string = os.Args[2]   // Path to the coded file or folder
+	args := []string{2: "./"}
+	copy(args, os.Args)
+	var action string = args[1] // The desired action: encode/decode/version
+	var path string = args[2]   // Path to the coded file or folder. By default is the current directory
 
+	log.SetFlags(0)
 	startTime := time.Now()
 	switch action {
 	case "decode":
 		err = filepath.Walk(path, decode)
 	case "encode":
 		err = filepath.Walk(path, encode)
+	case "version":
+		log.Println("LKFCoder version", version)
+		return
 	default:
-		err = errors.New("Specified an unsupported action. Must be decode or encode.")
+		err = errors.New("Specified an unsupported action. Must be decode/encode or version.")
 	}
 	finishTime := time.Now()
 
