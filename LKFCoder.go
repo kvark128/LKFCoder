@@ -4,18 +4,19 @@ package main
 
 import (
 	"encoding/binary"
-	"errors"
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
 	blockSize = 128 // The block size in words. Every word of 32 bit
 	delta     = 0x9e3779b9
-	version   = "0.2" // Program version
+	version   = "0.3" // Program version
 )
 
 // The 128-bit key for encrypting/decrypting lkf files. It is divided into 4 parts of 32 bit each.
@@ -34,24 +35,15 @@ func calcKey(leftWord, rightWord, r, k uint32) uint32 {
 
 // decode function decrypts the lkf-file and writes the result to the source file, then changes the extension to .mp3
 // Decoding occurs by blocks from the beginning of the file. If the end of file is less than block size, it remains as it is.
-func decode(path string, info os.FileInfo, err error) error {
-	if err != nil {
-		return err
-	}
-
-	if info.IsDir() || strings.ToLower(filepath.Ext(path)) != ".lkf" {
-		return nil
-	}
-
-	srcFile, err := os.OpenFile(path, os.O_RDWR, 0644)
-	if err != nil {
-		log.Println(path, err)
-		return nil
-	}
-	defer os.Rename(path, path[:len(path)-3]+"mp3")
-	defer srcFile.Close()
-
+func decode(srcFile *os.File, wg *sync.WaitGroup, semaphoreCH <-chan struct{}, errorsCH chan<- error) {
 	var block [blockSize]uint32
+	defer wg.Done()
+	defer func() {
+		path := srcFile.Name()
+		srcFile.Close()
+		os.Rename(path, path[:len(path)-3]+"mp3")
+		<-semaphoreCH
+	}()
 
 	for binary.Read(srcFile, binary.LittleEndian, &block) == nil {
 		for r := uint32(3); r != 0; r-- {
@@ -62,39 +54,28 @@ func decode(path string, info os.FileInfo, err error) error {
 
 		// Moving on 1 block back, for record the decoded block
 		if _, err := srcFile.Seek(blockSize*-4, 1); err != nil {
-			log.Println(path, err)
+			errorsCH <- err
 			break
 		}
 
 		if err := binary.Write(srcFile, binary.LittleEndian, &block); err != nil {
-			log.Println(path, err)
+			errorsCH <- err
 			break
 		}
 	}
-
-	return nil
 }
 
 // encode function encrypts the mp3-file and writes the result to the source file, then changes the extension to .lkf
 // Encoding occurs by blocks from the beginning of the file. If the end of file is less than block size, it remains as it is.
-func encode(path string, info os.FileInfo, err error) error {
-	if err != nil {
-		return err
-	}
-
-	if info.IsDir() || strings.ToLower(filepath.Ext(path)) != ".mp3" {
-		return nil
-	}
-
-	srcFile, err := os.OpenFile(path, os.O_RDWR, 0644)
-	if err != nil {
-		log.Println(path, err)
-		return nil
-	}
-	defer os.Rename(path, path[:len(path)-3]+"lkf")
-	defer srcFile.Close()
-
+func encode(srcFile *os.File, wg *sync.WaitGroup, semaphoreCH <-chan struct{}, errorsCH chan<- error) {
 	var block [blockSize]uint32
+	defer wg.Done()
+	defer func() {
+		path := srcFile.Name()
+		srcFile.Close()
+		os.Rename(path, path[:len(path)-3]+"lkf")
+		<-semaphoreCH
+	}()
 
 	for binary.Read(srcFile, binary.LittleEndian, &block) == nil {
 		for r := uint32(1); r != 4; r++ {
@@ -105,44 +86,81 @@ func encode(path string, info os.FileInfo, err error) error {
 
 		// Moving on 1 block back, for record the encoded block
 		if _, err := srcFile.Seek(blockSize*-4, 1); err != nil {
-			log.Println(path, err)
+			errorsCH <- err
 			break
 		}
 
 		if err := binary.Write(srcFile, binary.LittleEndian, &block); err != nil {
-			log.Println(path, err)
+			errorsCH <- err
 			break
 		}
 	}
-
-	return nil
 }
 
 func main() {
-	var err error
 	args := []string{2: "./"}
 	copy(args, os.Args)
-	var action string = args[1] // The desired action: encode/decode/version
-	var path string = args[2]   // Path to the coded file or folder. By default is the current directory
+	var srcExt string
+	var counterFiles int
+
+	var action func(*os.File, *sync.WaitGroup, <-chan struct{}, chan<- error)
+	wg := new(sync.WaitGroup)
+	errorsCH := make(chan error)
+	semaphoreCH := make(chan struct{}, runtime.NumCPU())
 
 	log.SetFlags(0)
-	startTime := time.Now()
-	switch action {
+	switch args[1] {
 	case "decode":
-		err = filepath.Walk(path, decode)
+		action = decode
+		srcExt = ".lkf"
 	case "encode":
-		err = filepath.Walk(path, encode)
+		action = encode
+		srcExt = ".mp3"
 	case "version":
 		log.Println("LKFCoder version", version)
 		return
 	default:
-		err = errors.New("Specified an unsupported action. Must be decode/encode or version.")
+		log.Fatal("Specified an unsupported action. Must be decode/encode or version.")
+	}
+
+	walker := func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() || strings.ToLower(filepath.Ext(path)) != srcExt {
+			return nil
+		}
+
+		srcFile, err := os.OpenFile(path, os.O_RDWR, 0644)
+		if err != nil {
+			log.Println(path, err)
+			return nil
+		}
+
+		semaphoreCH <- struct{}{}
+		wg.Add(1)
+		counterFiles++
+		go action(srcFile, wg, semaphoreCH, errorsCH)
+		return nil
+	}
+
+	log.Println("Please wait...")
+	startTime := time.Now()
+	if err := filepath.Walk(args[2], walker); err != nil {
+		log.Println(err)
+	}
+
+	go func() {
+		wg.Wait()
+		close(errorsCH)
+	}()
+
+	for err := range errorsCH {
+		log.Println(err)
 	}
 	finishTime := time.Now()
 
-	if err != nil {
-		log.Fatal(err)
-	}
-
+	log.Printf("Processed files: %d\n", counterFiles)
 	log.Printf("Operation completed successfully in %v\n", finishTime.Sub(startTime))
 }
