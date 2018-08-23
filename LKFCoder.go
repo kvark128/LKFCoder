@@ -95,36 +95,30 @@ func encoder(files <-chan *os.File, wg *sync.WaitGroup, errors chan<- error) {
 	}
 }
 
-func workerCreator(worker func(<-chan *os.File, *sync.WaitGroup, chan<- error), files chan *os.File, errors chan error) {
-	wg := new(sync.WaitGroup)
-
-	for n := runtime.NumCPU(); n > 0; n-- {
-		wg.Add(1)
-		go worker(files, wg, errors)
-	}
-
-	go func() {
-		wg.Wait()
-		close(errors)
-	}()
-}
-
 func main() {
 	var args = []string{2: "./"}
 	copy(args, os.Args)
 
 	var counterFiles int
 	var srcExt string
+	wg := new(sync.WaitGroup)
 	files := make(chan *os.File)
 	errors := make(chan error)
+
+	workerCreator := func(worker func(<-chan *os.File, *sync.WaitGroup, chan<- error)) {
+		for n := runtime.NumCPU(); n > 0; n-- {
+			wg.Add(1)
+			go worker(files, wg, errors)
+		}
+	}
 
 	log.SetFlags(0)
 	switch args[1] {
 	case "decode":
-		workerCreator(decoder, files, errors)
+		workerCreator(decoder)
 		srcExt = ".lkf"
 	case "encode":
-		workerCreator(encoder, files, errors)
+		workerCreator(encoder)
 		srcExt = ".mp3"
 	case "version":
 		log.Println("LKFCoder version", version)
@@ -148,13 +142,17 @@ func main() {
 		return nil
 	}
 
+	go func() {
+		if err := filepath.Walk(args[2], walker); err != nil {
+			errors <- err
+		}
+		close(files)
+		wg.Wait()
+		close(errors)
+	}()
+
 	log.Println("Please wait...")
 	startTime := time.Now()
-	if err := filepath.Walk(args[2], walker); err != nil {
-		log.Println(err)
-	}
-	close(files)
-
 	for err := range errors {
 		log.Println(err)
 	}
