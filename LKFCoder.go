@@ -152,12 +152,10 @@ func main() {
 	}()
 
 	log.Println("Please wait...")
-	startTime := time.Now()
+	start := time.Now()
 	for err := range errors {
 		log.Println(err)
 	}
-	finishTime := time.Now()
 
-	log.Printf("Processed files: %d\n", counterFiles)
-	log.Printf("Operation completed successfully in %v\n", finishTime.Sub(startTime))
+	log.Printf("Successfully processed %d files in %v\n", counterFiles, time.Since(start))
 }
