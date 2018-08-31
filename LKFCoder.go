@@ -19,6 +19,8 @@ const (
 	version   = "0.4" // Program version
 )
 
+type Block [blockSize]uint32
+
 // The 128-bit key for encrypting/decrypting lkf files. It is divided into 4 parts of 32 bit each.
 var key = [4]uint32{
 	0x8ac14c27,
@@ -36,10 +38,10 @@ func calcKey(leftWord, rightWord, r, k uint32) uint32 {
 // decoder function decrypts the lkf-file and writes the result to the source file, then changes the extension to .mp3
 // Decoding occurs by blocks from the beginning of the file. If the end of file is less than block size, it remains as it is.
 func decoder(files <-chan *os.File, wg *sync.WaitGroup, errors chan<- error) {
-	var block [blockSize]uint32
+	var block = new(Block)
 	defer wg.Done()
 	for srcFile := range files {
-		for binary.Read(srcFile, binary.LittleEndian, &block) == nil {
+		for binary.Read(srcFile, binary.LittleEndian, block) == nil {
 			for r := uint32(3); r != 0; r-- {
 				for k := blockSize - 1; k >= 0; k-- {
 					block[k] -= calcKey(block[(k-1)&(blockSize-1)], block[(k+1)&(blockSize-1)], r*delta, uint32(k))
@@ -52,7 +54,7 @@ func decoder(files <-chan *os.File, wg *sync.WaitGroup, errors chan<- error) {
 				break
 			}
 
-			if err := binary.Write(srcFile, binary.LittleEndian, &block); err != nil {
+			if err := binary.Write(srcFile, binary.LittleEndian, block); err != nil {
 				errors <- err
 				break
 			}
@@ -67,10 +69,10 @@ func decoder(files <-chan *os.File, wg *sync.WaitGroup, errors chan<- error) {
 // encoder function encrypts the mp3-file and writes the result to the source file, then changes the extension to .lkf
 // Encoding occurs by blocks from the beginning of the file. If the end of file is less than block size, it remains as it is.
 func encoder(files <-chan *os.File, wg *sync.WaitGroup, errors chan<- error) {
-	var block [blockSize]uint32
+	var block = new(Block)
 	defer wg.Done()
 	for srcFile := range files {
-		for binary.Read(srcFile, binary.LittleEndian, &block) == nil {
+		for binary.Read(srcFile, binary.LittleEndian, block) == nil {
 			for r := uint32(1); r != 4; r++ {
 				for k := 0; k < blockSize; k++ {
 					block[k] += calcKey(block[(k-1)&(blockSize-1)], block[(k+1)&(blockSize-1)], r*delta, uint32(k))
@@ -83,7 +85,7 @@ func encoder(files <-chan *os.File, wg *sync.WaitGroup, errors chan<- error) {
 				break
 			}
 
-			if err := binary.Write(srcFile, binary.LittleEndian, &block); err != nil {
+			if err := binary.Write(srcFile, binary.LittleEndian, block); err != nil {
 				errors <- err
 				break
 			}
