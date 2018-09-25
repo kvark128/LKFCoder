@@ -29,7 +29,7 @@ var key = [4]uint32{
 
 func calcKey(leftWord, rightWord, r, k uint32) uint32 {
 	n1 := (leftWord>>5 ^ rightWord<<2) + (rightWord>>3 ^ leftWord<<4)
-	n2 := (key[(k&3)^(r>>2&3)] ^ leftWord) + (r ^ rightWord)
+	n2 := (key[(r>>2^k)&3] ^ leftWord) + (r ^ rightWord)
 	return n1 ^ n2
 }
 
