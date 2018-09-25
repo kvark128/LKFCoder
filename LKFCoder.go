@@ -19,14 +19,12 @@ const (
 	version   = "0.4" // Program version
 )
 
-type Block [blockSize]uint32
-
 // The 128-bit key for encrypting/decrypting lkf files. It is divided into 4 parts of 32 bit each.
 var key = [4]uint32{
 	0x8ac14c27,
 	0x42845ac1,
 	0x136506bb,
-	0x5d47c66,
+	0x05d47c66,
 }
 
 func calcKey(leftWord, rightWord, r, k uint32) uint32 {
@@ -38,7 +36,7 @@ func calcKey(leftWord, rightWord, r, k uint32) uint32 {
 // decoder function decrypts the lkf-file and writes the result to the source file, then changes the extension to .mp3
 // Decoding occurs by blocks from the beginning of the file. If the end of file is less than block size, it remains as it is.
 func decoder(files <-chan *os.File, wg *sync.WaitGroup, errors chan<- error) {
-	var block = new(Block)
+	var block = make([]uint32, blockSize)
 	defer wg.Done()
 	for srcFile := range files {
 		for binary.Read(srcFile, binary.LittleEndian, block) == nil {
@@ -69,7 +67,7 @@ func decoder(files <-chan *os.File, wg *sync.WaitGroup, errors chan<- error) {
 // encoder function encrypts the mp3-file and writes the result to the source file, then changes the extension to .lkf
 // Encoding occurs by blocks from the beginning of the file. If the end of file is less than block size, it remains as it is.
 func encoder(files <-chan *os.File, wg *sync.WaitGroup, errors chan<- error) {
-	var block = new(Block)
+	var block = make([]uint32, blockSize)
 	defer wg.Done()
 	for srcFile := range files {
 		for binary.Read(srcFile, binary.LittleEndian, block) == nil {
