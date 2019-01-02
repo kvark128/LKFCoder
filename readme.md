@@ -1,26 +1,26 @@
 # LKFCoder
 
-LKFCoder is a utility for encoding and decoding files of LKF format.
+LKFCoder — это утилита написанная на языке go, предназначенная для кодирования и декодирования аудиокниг формата lkf.
 
-## Building
-The utility has no third-party dependencies and compiled on any platform, where the golang compiler is available. For get and install LKFCoder, run the following command:
+## Сборка
+Утилита не имеет сторонних зависимостей и собирается на любой платформе где доступен инструментарий go. Для получения исполняемого файла из исходного кода выполните следующую команду:
 
 	go get github.com/kvark128/LKFCoder
 
-## Using
-The first argument of program specifies the required action: decode or encode or version.
+## Использование
+Первый аргумент программы указывает требуемое действие: decode, encode или version.
 
-* decode - specifies that the LKFCoder should decode lkf files to mp3 format.
-* encode - specifies that the LKFCoder should encode mp3 files to lkf format.
-* version - shows the version LKFCoder.
+* decode - указывает, что LKFCoder должен декодировать lkf-файлы в формат mp3.
+* encode - указывает, что LKFCoder должен кодировать mp3-файлы в формат lkf.
+* version - показывает версию LKFCoder.
 
-The second argument specifies path to the file or directory that requires processing.
-If the second argument is not specified, the current work directory is used.
-When specifying a directory, all files in all its subdirectories will be processed.
-The processed files are determined by extension. lkf are decoded to mp3 or mp3 are encoded to lkf.
+Второй аргумент указывает путь к файлу или каталогу, который требуется обработать.
+Если второй аргумент не указан, то используется текущий рабочий каталог.
+При указании каталога будут обработаны все файлы во всех его подкаталогах.
+Обрабатываемые файлы определяются по расширению. lkf декодируется в mp3 или mp3 кодируется в lkf.
 
-For example, if the book of the lkf format is located on the path C:\MyBook, then to convert it to the mp3 format, run the following command:
+Например, если книга в формате lkf находится по пути C:\MyBook, то для её преобразования в формат mp3 выполните следующую команду:
 
 	LKFCoder decode C:\MyBook
 
-The result of the work is written to the source file, after which he changes extension.
+Результат работы записывается в исходный файл, у которого по окончанию меняется расширение.

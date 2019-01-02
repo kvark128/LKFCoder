@@ -124,7 +124,7 @@ func main() {
 		log.Println("LKFCoder version", version)
 		return
 	default:
-		log.Fatal("Specified an unsupported action. Must be decode/encode or version.")
+		log.Fatal("Указано неподдерживаемое действие. Должно быть decode/encode или version")
 	}
 
 	walker := func(path string, info os.FileInfo, err error) error {
@@ -151,11 +151,11 @@ func main() {
 		close(errors)
 	}()
 
-	log.Println("Please wait...")
+	log.Println("Пожалуйста, подождите...")
 	start := time.Now()
 	for err := range errors {
 		log.Println(err)
 	}
 
-	log.Printf("Successfully processed %d files in %v\n", counterFiles, time.Since(start))
+	log.Printf("Обработано %d файлов за %v\n", counterFiles, time.Since(start))
 }
