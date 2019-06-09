@@ -16,7 +16,6 @@ import (
 const (
 	blockSize = 128 // The block size in words. Every word of 32 bit
 	delta     = 0x9e3779b9
-	version   = "0.4" // Program version
 )
 
 // The 128-bit key for encrypting/decrypting lkf files. It is divided into 4 parts of 32 bit each.
@@ -120,11 +119,8 @@ func main() {
 	case "encode":
 		workerCreator(encoder)
 		srcExt = ".mp3"
-	case "version":
-		log.Println("LKFCoder version", version)
-		return
 	default:
-		log.Fatal("Указано неподдерживаемое действие. Должно быть decode/encode или version")
+		log.Fatal("Указано неподдерживаемое действие. Должно быть decode или encode")
 	}
 
 	walker := func(path string, info os.FileInfo, err error) error {
