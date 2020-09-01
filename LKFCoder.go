@@ -1,9 +1,7 @@
 // Utility for encoding/decoding lkf files.
-// Used 3-pass block cipher XXTEA with 128-bit key and block size of 128 words.
 package main
 
 import (
-	"encoding/binary"
 	"log"
 	"os"
 	"path/filepath"
@@ -11,47 +9,29 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kvark128/lkf"
 )
 
-const (
-	blockSize = 128 // The block size in words. Every word of 32 bit
-	delta     = 0x9e3779b9
-)
-
-// The 128-bit key for encrypting/decrypting lkf files. It is divided into 4 parts of 32 bit each.
-var key = [4]uint32{
-	0x8ac14c27,
-	0x42845ac1,
-	0x136506bb,
-	0x05d47c66,
-}
-
-func calcKey(leftWord, rightWord, r, k uint32) uint32 {
-	n1 := (leftWord>>5 ^ rightWord<<2) + (rightWord>>3 ^ leftWord<<4)
-	n2 := (key[(r>>2^k)&3] ^ leftWord) + (r ^ rightWord)
-	return n1 ^ n2
-}
-
-// decoder function decrypts the lkf-file and writes the result to the source file, then changes the extension to .mp3
-// Decoding occurs by blocks from the beginning of the file. If the end of file is less than block size, it remains as it is.
-func decoder(files <-chan *os.File, wg *sync.WaitGroup, errors chan<- error) {
-	var block = make([]uint32, blockSize)
+func coder(files <-chan *os.File, wg *sync.WaitGroup, targetExt string, cryptor func(*lkf.Cryptor, []byte) int, errors chan<- error) {
+	data := make([]byte, lkf.BlockSizeInBytes*1024)
+	c := new(lkf.Cryptor)
 	defer wg.Done()
 	for srcFile := range files {
-		for binary.Read(srcFile, binary.LittleEndian, block) == nil {
-			for r := uint32(3); r != 0; r-- {
-				for k := blockSize - 1; k >= 0; k-- {
-					block[k] -= calcKey(block[(k-1)&(blockSize-1)], block[(k+1)&(blockSize-1)], r*delta, uint32(k))
-				}
+		for {
+			n, _ := srcFile.Read(data)
+			if n < lkf.BlockSizeInBytes {
+				break
 			}
+			cryptor(c, data[:n])
 
-			// Moving on 1 block back, for record the decoded block
-			if _, err := srcFile.Seek(blockSize*-4, 1); err != nil {
+			// Moving on n bytes back, for record the decrypted/encrypted data
+			if _, err := srcFile.Seek(-int64(n), 1); err != nil {
 				errors <- err
 				break
 			}
 
-			if err := binary.Write(srcFile, binary.LittleEndian, block); err != nil {
+			if _, err := srcFile.Write(data[:n]); err != nil {
 				errors <- err
 				break
 			}
@@ -59,38 +39,7 @@ func decoder(files <-chan *os.File, wg *sync.WaitGroup, errors chan<- error) {
 
 		path := srcFile.Name()
 		srcFile.Close()
-		os.Rename(path, path[:len(path)-3]+"mp3")
-	}
-}
-
-// encoder function encrypts the mp3-file and writes the result to the source file, then changes the extension to .lkf
-// Encoding occurs by blocks from the beginning of the file. If the end of file is less than block size, it remains as it is.
-func encoder(files <-chan *os.File, wg *sync.WaitGroup, errors chan<- error) {
-	var block = make([]uint32, blockSize)
-	defer wg.Done()
-	for srcFile := range files {
-		for binary.Read(srcFile, binary.LittleEndian, block) == nil {
-			for r := uint32(1); r != 4; r++ {
-				for k := 0; k < blockSize; k++ {
-					block[k] += calcKey(block[(k-1)&(blockSize-1)], block[(k+1)&(blockSize-1)], r*delta, uint32(k))
-				}
-			}
-
-			// Moving on 1 block back, for record the encoded block
-			if _, err := srcFile.Seek(blockSize*-4, 1); err != nil {
-				errors <- err
-				break
-			}
-
-			if err := binary.Write(srcFile, binary.LittleEndian, block); err != nil {
-				errors <- err
-				break
-			}
-		}
-
-		path := srcFile.Name()
-		srcFile.Close()
-		os.Rename(path, path[:len(path)-3]+"lkf")
+		os.Rename(path, path[:len(path)-3]+targetExt)
 	}
 }
 
@@ -104,20 +53,20 @@ func main() {
 	files := make(chan *os.File)
 	errors := make(chan error)
 
-	workerCreator := func(worker func(<-chan *os.File, *sync.WaitGroup, chan<- error)) {
+	workerCreator := func(targetExt string, cryptor func(*lkf.Cryptor, []byte) int) {
 		for n := runtime.NumCPU(); n > 0; n-- {
 			wg.Add(1)
-			go worker(files, wg, errors)
+			go coder(files, wg, targetExt, cryptor, errors)
 		}
 	}
 
 	log.SetFlags(0)
 	switch args[1] {
 	case "decode":
-		workerCreator(decoder)
+		workerCreator("mp3", func(c *lkf.Cryptor, data []byte) int { return c.Decrypt(data) })
 		srcExt = ".lkf"
 	case "encode":
-		workerCreator(encoder)
+		workerCreator("lkf", func(c *lkf.Cryptor, data []byte) int { return c.Encrypt(data) })
 		srcExt = ".mp3"
 	default:
 		log.Fatal("Указано неподдерживаемое действие. Должно быть decode или encode")
