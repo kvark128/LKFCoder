@@ -13,33 +13,41 @@ import (
 	"github.com/kvark128/lkf"
 )
 
-func coder(files <-chan *os.File, wg *sync.WaitGroup, targetExt string, cryptor func(*lkf.Cryptor, []byte) int, errors chan<- error) {
+func worker(pathCH <-chan string, wg *sync.WaitGroup, targetExt string, cryptor func(*lkf.Cryptor, []byte) int) {
 	data := make([]byte, lkf.BlockSizeInBytes*1024)
 	c := new(lkf.Cryptor)
 	defer wg.Done()
-	for srcFile := range files {
+	for path := range pathCH {
+		file, err := os.OpenFile(path, os.O_RDWR, 0644)
+		if err != nil {
+			log.Printf("Stop worker: %s\n", err)
+			return
+		}
+
 		for {
-			n, _ := srcFile.Read(data)
+			n, _ := file.Read(data)
 			if n < lkf.BlockSizeInBytes {
 				break
 			}
 			cryptor(c, data[:n])
 
 			// Moving on n bytes back, for record the decrypted/encrypted data
-			if _, err := srcFile.Seek(-int64(n), 1); err != nil {
-				errors <- err
-				break
+			if _, err := file.Seek(-int64(n), 1); err != nil {
+				log.Printf("Stop worker: %s\n", err)
+				return
 			}
 
-			if _, err := srcFile.Write(data[:n]); err != nil {
-				errors <- err
-				break
+			if _, err := file.Write(data[:n]); err != nil {
+				log.Printf("Stop worker: %s\n", err)
+				return
 			}
 		}
 
-		path := srcFile.Name()
-		srcFile.Close()
-		os.Rename(path, path[:len(path)-3]+targetExt)
+		file.Close()
+		if err := os.Rename(path, path[:len(path)-4]+targetExt); err != nil {
+			log.Printf("Stop worker: %s\n", err)
+			return
+		}
 	}
 }
 
@@ -48,59 +56,48 @@ func main() {
 	copy(args, os.Args)
 
 	var counterFiles int
-	var srcExt string
+	var srcExt, targetExt string
 	wg := new(sync.WaitGroup)
-	files := make(chan *os.File)
-	errors := make(chan error)
-
-	workerCreator := func(targetExt string, cryptor func(*lkf.Cryptor, []byte) int) {
-		for n := runtime.NumCPU(); n > 0; n-- {
-			wg.Add(1)
-			go coder(files, wg, targetExt, cryptor, errors)
-		}
-	}
+	pathCH := make(chan string)
+	var cryptor func(*lkf.Cryptor, []byte) int
 
 	log.SetFlags(0)
 	switch args[1] {
 	case "decode":
-		workerCreator("mp3", func(c *lkf.Cryptor, data []byte) int { return c.Decrypt(data) })
+		cryptor = func(c *lkf.Cryptor, data []byte) int { return c.Decrypt(data) }
 		srcExt = ".lkf"
+		targetExt = ".mp3"
 	case "encode":
-		workerCreator("lkf", func(c *lkf.Cryptor, data []byte) int { return c.Encrypt(data) })
+		cryptor = func(c *lkf.Cryptor, data []byte) int { return c.Encrypt(data) }
 		srcExt = ".mp3"
+		targetExt = ".lkf"
 	default:
 		log.Fatal("Указано неподдерживаемое действие. Должно быть decode или encode")
+	}
+
+	for n := runtime.NumCPU(); n > 0; n-- {
+		wg.Add(1)
+		go worker(pathCH, wg, targetExt, cryptor)
 	}
 
 	walker := func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || strings.ToLower(filepath.Ext(path)) != srcExt {
 			return err
 		}
-
-		srcFile, err := os.OpenFile(path, os.O_RDWR, 0644)
-		if err != nil {
-			return err
-		}
-
 		counterFiles++
-		files <- srcFile
+		pathCH <- path
 		return nil
 	}
 
-	go func() {
-		if err := filepath.Walk(args[2], walker); err != nil {
-			errors <- err
-		}
-		close(files)
-		wg.Wait()
-		close(errors)
-	}()
-
 	log.Println("Пожалуйста, подождите...")
 	start := time.Now()
-	for err := range errors {
-		log.Println(err)
+
+	if err := filepath.Walk(args[2], walker); err != nil {
+		log.Printf("Filewalker: %s\n", err)
 	}
+
+	close(pathCH)
+	wg.Wait()
 
 	log.Printf("Обработано %d файлов за %v\n", counterFiles, time.Since(start))
 }
