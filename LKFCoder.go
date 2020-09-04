@@ -14,7 +14,7 @@ import (
 )
 
 func worker(pathCH <-chan string, wg *sync.WaitGroup, targetExt string, cryptor func(*lkf.Cryptor, []byte) int) {
-	data := make([]byte, lkf.BlockSizeInBytes*1024)
+	data := make([]byte, lkf.BlockSize*1024) // 512 Kb
 	c := new(lkf.Cryptor)
 	defer wg.Done()
 	for path := range pathCH {
@@ -26,7 +26,7 @@ func worker(pathCH <-chan string, wg *sync.WaitGroup, targetExt string, cryptor 
 
 		for {
 			n, _ := file.Read(data)
-			if n < lkf.BlockSizeInBytes {
+			if n < lkf.BlockSize {
 				break
 			}
 			cryptor(c, data[:n])
