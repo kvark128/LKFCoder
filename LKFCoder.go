@@ -64,11 +64,11 @@ func main() {
 	log.SetFlags(0)
 	switch args[1] {
 	case "decode":
-		cryptor = func(c *lkf.Cryptor, data []byte) int { return c.Decrypt(data) }
+		cryptor = func(c *lkf.Cryptor, data []byte) int { return c.Decrypt(data, data) }
 		srcExt = ".lkf"
 		targetExt = ".mp3"
 	case "encode":
-		cryptor = func(c *lkf.Cryptor, data []byte) int { return c.Encrypt(data) }
+		cryptor = func(c *lkf.Cryptor, data []byte) int { return c.Encrypt(data, data) }
 		srcExt = ".mp3"
 		targetExt = ".lkf"
 	default:
