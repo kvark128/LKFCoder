@@ -81,7 +81,7 @@ func main() {
 		srcExt = ".mp3"
 		targetExt = ".lkf"
 	default:
-		log.Fatal("Указано неподдерживаемое действие. Должно быть decode или encode")
+		log.Fatal("An unsupported action is specified. Must be decode or encode")
 	}
 
 	for n := runtime.NumCPU(); n > 0; n-- {
@@ -98,6 +98,7 @@ func main() {
 		return nil
 	}
 
+	log.Printf("Please wait...\n")
 	start := time.Now()
 	if err := filepath.Walk(args[2], walker); err != nil {
 		log.Printf("Filewalker: %s\n", err)
@@ -105,6 +106,5 @@ func main() {
 
 	close(pathCH)
 	wg.Wait()
-
-	log.Printf("Обработано %d файлов за %v\n", fileCounter, time.Since(start))
+	log.Printf("Processed %d *%s files in %v\n", fileCounter, srcExt, time.Since(start))
 }
