@@ -2,6 +2,7 @@
 package main
 
 import (
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -32,7 +33,7 @@ func worker(pathCH <-chan string, wg *sync.WaitGroup, targetExt string, cryptor 
 			cryptor(c, data[:n])
 
 			// Moving on n bytes back, for record the decrypted/encrypted data
-			if _, err := file.Seek(-int64(n), 1); err != nil {
+			if _, err := file.Seek(-int64(n), io.SeekCurrent); err != nil {
 				log.Printf("Stop worker: %s\n", err)
 				return
 			}
