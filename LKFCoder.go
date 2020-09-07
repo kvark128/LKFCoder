@@ -1,4 +1,4 @@
-// Utility for encoding/decoding lkf files.
+// Command-line utility for encoding/decoding LKF files.
 package main
 
 import (
@@ -18,11 +18,13 @@ func worker(pathCH <-chan string, wg *sync.WaitGroup, targetExt string, cryptor 
 	data := make([]byte, lkf.BlockSize*1024) // 512 Kb
 	c := new(lkf.Cryptor)
 	defer wg.Done()
+
+pathGetting:
 	for path := range pathCH {
 		file, err := os.OpenFile(path, os.O_RDWR, 0644)
 		if err != nil {
-			log.Printf("Stop worker: %s\n", err)
-			return
+			log.Printf("Worker error: %s\n", err)
+			continue pathGetting
 		}
 
 		for {
@@ -31,27 +33,29 @@ func worker(pathCH <-chan string, wg *sync.WaitGroup, targetExt string, cryptor 
 				if err == io.EOF {
 					break
 				}
-				log.Printf("Stop worker: %s\n", err)
-				return
+				log.Printf("Worker error: %s\n", err)
+				file.Close()
+				continue pathGetting
 			}
 			cryptor(c, data[:n])
 
 			// Moving on n bytes back, for record the decrypted/encrypted data
 			if _, err := file.Seek(-int64(n), io.SeekCurrent); err != nil {
-				log.Printf("Stop worker: %s\n", err)
-				return
+				log.Printf("Worker error: %s\n", err)
+				file.Close()
+				continue pathGetting
 			}
 
 			if _, err := file.Write(data[:n]); err != nil {
-				log.Printf("Stop worker: %s\n", err)
-				return
+				log.Printf("Worker error: %s\n", err)
+				file.Close()
+				continue pathGetting
 			}
 		}
 
 		file.Close()
 		if err := os.Rename(path, path[:len(path)-4]+targetExt); err != nil {
-			log.Printf("Stop worker: %s\n", err)
-			return
+			log.Printf("Worker error: %s\n", err)
 		}
 	}
 }
@@ -60,7 +64,7 @@ func main() {
 	var args = []string{2: "./"}
 	copy(args, os.Args)
 
-	var counterFiles int
+	var fileCounter int
 	var srcExt, targetExt string
 	wg := new(sync.WaitGroup)
 	pathCH := make(chan string)
@@ -89,14 +93,12 @@ func main() {
 		if err != nil || info.IsDir() || strings.ToLower(filepath.Ext(path)) != srcExt {
 			return err
 		}
-		counterFiles++
+		fileCounter++
 		pathCH <- path
 		return nil
 	}
 
-	log.Println("Пожалуйста, подождите...")
 	start := time.Now()
-
 	if err := filepath.Walk(args[2], walker); err != nil {
 		log.Printf("Filewalker: %s\n", err)
 	}
@@ -104,5 +106,5 @@ func main() {
 	close(pathCH)
 	wg.Wait()
 
-	log.Printf("Обработано %d файлов за %v\n", counterFiles, time.Since(start))
+	log.Printf("Обработано %d файлов за %v\n", fileCounter, time.Since(start))
 }
