@@ -26,9 +26,15 @@ func worker(pathCH <-chan string, wg *sync.WaitGroup, targetExt string, cryptor 
 		}
 
 		for {
-			n, _ := file.Read(data)
+			n, err := file.Read(data)
 			if n < lkf.BlockSize {
-				break
+				if err == io.EOF {
+					break
+				} else if err == nil {
+					continue
+				}
+				log.Printf("Stop worker: %s\n", err)
+				return
 			}
 			cryptor(c, data[:n])
 
