@@ -30,8 +30,6 @@ func worker(pathCH <-chan string, wg *sync.WaitGroup, targetExt string, cryptor 
 			if n < lkf.BlockSize {
 				if err == io.EOF {
 					break
-				} else if err == nil {
-					continue
 				}
 				log.Printf("Stop worker: %s\n", err)
 				return
