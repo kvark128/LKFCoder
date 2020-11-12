@@ -14,48 +14,63 @@ import (
 	"github.com/kvark128/lkf"
 )
 
-func worker(pathCH <-chan string, wg *sync.WaitGroup, targetExt string, cryptor func(*lkf.Cryptor, []byte) int) {
-	data := make([]byte, lkf.BlockSize*1024) // 512 Kb
-	c := new(lkf.Cryptor)
-	defer wg.Done()
-
-pathGetting:
-	for path := range pathCH {
-		file, err := os.OpenFile(path, os.O_RDWR, 0644)
+func FillBuffer(r io.Reader, buf []byte) (int, error) {
+	var rn int
+	for {
+		n, err := r.Read(buf[rn:])
+		rn += n
 		if err != nil {
-			log.Printf("Worker error: %s\n", err)
-			continue pathGetting
+			return rn, err
+		}
+		if rn == len(buf) {
+			return rn, nil
+		}
+	}
+}
+
+func FileCryptor(f *os.File, cryptor func(*lkf.Cryptor, []byte) int) error {
+	buf := make([]byte, lkf.BlockSize*1024) // 512 Kb
+	c := new(lkf.Cryptor)
+
+	for {
+		n, err := FillBuffer(f, buf)
+		if n < lkf.BlockSize {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+		cryptor(c, buf[:n])
+
+		// Moving on n bytes back, for record the decrypted/encrypted data
+		if _, err := f.Seek(-int64(n), io.SeekCurrent); err != nil {
+			return err
 		}
 
-		for {
-			n, err := file.Read(data)
-			if n < lkf.BlockSize {
-				if err == io.EOF {
-					break
-				}
-				log.Printf("Worker error: %s\n", err)
-				file.Close()
-				continue pathGetting
-			}
-			cryptor(c, data[:n])
+		if _, err := f.Write(buf[:n]); err != nil {
+			return err
+		}
+	}
+}
 
-			// Moving on n bytes back, for record the decrypted/encrypted data
-			if _, err := file.Seek(-int64(n), io.SeekCurrent); err != nil {
-				log.Printf("Worker error: %s\n", err)
-				file.Close()
-				continue pathGetting
-			}
-
-			if _, err := file.Write(data[:n]); err != nil {
-				log.Printf("Worker error: %s\n", err)
-				file.Close()
-				continue pathGetting
-			}
+func worker(pathCH <-chan string, wg *sync.WaitGroup, targetExt string, cryptor func(*lkf.Cryptor, []byte) int) {
+	defer wg.Done()
+	for path := range pathCH {
+		f, err := os.OpenFile(path, os.O_RDWR, 0644)
+		if err != nil {
+			log.Printf("worker: %v", err)
+			continue
 		}
 
-		file.Close()
+		err = FileCryptor(f, cryptor)
+		f.Close()
+		if err != nil {
+			log.Printf("worker: %v", err)
+			continue
+		}
+
 		if err := os.Rename(path, path[:len(path)-4]+targetExt); err != nil {
-			log.Printf("Worker error: %s\n", err)
+			log.Printf("worker: %v", err)
 		}
 	}
 }
