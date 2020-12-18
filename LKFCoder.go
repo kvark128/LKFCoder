@@ -14,32 +14,18 @@ import (
 	"github.com/kvark128/lkf"
 )
 
-func FillBuffer(r io.Reader, buf []byte) (int, error) {
-	var rn int
-	for {
-		n, err := r.Read(buf[rn:])
-		rn += n
-		if err != nil {
-			return rn, err
-		}
-		if rn == len(buf) {
-			return rn, nil
-		}
-	}
-}
-
-func FileCryptor(f *os.File, cryptor func(*lkf.Cryptor, []byte) int) error {
+func FileCryptor(f *os.File, cryptor func(*lkf.Cryptor, []byte) int) (err error) {
 	buf := make([]byte, lkf.BlockSize*1024) // 512 Kb
 	c := new(lkf.Cryptor)
 
-	for {
-		n, err := FillBuffer(f, buf)
+	for err == nil {
+		var n int
+		n, err = io.ReadFull(f, buf)
 		if n < lkf.BlockSize {
-			if err == io.EOF {
-				return nil
-			}
-			return err
+			break
 		}
+
+		// Encrypt or decrypt the read data
 		cryptor(c, buf[:n])
 
 		// Moving on n bytes back, for record the decrypted/encrypted data
@@ -51,6 +37,11 @@ func FileCryptor(f *os.File, cryptor func(*lkf.Cryptor, []byte) int) error {
 			return err
 		}
 	}
+
+	if err == io.ErrUnexpectedEOF {
+		err = nil
+	}
+	return
 }
 
 func worker(pathCH <-chan string, wg *sync.WaitGroup, targetExt string, cryptor func(*lkf.Cryptor, []byte) int) {
