@@ -3,6 +3,7 @@ package main
 
 import (
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -14,7 +15,13 @@ import (
 	"github.com/kvark128/lkf"
 )
 
-func FileCryptor(f *os.File, cryptor func(*lkf.Cryptor, []byte) int) (err error) {
+func FileCryptor(path string, cryptor func(*lkf.Cryptor, []byte) int) error {
+	f, err := os.OpenFile(path, os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
 	buf := make([]byte, lkf.BlockSize*1024) // 512 Kb
 	c := new(lkf.Cryptor)
 
@@ -39,28 +46,28 @@ func FileCryptor(f *os.File, cryptor func(*lkf.Cryptor, []byte) int) (err error)
 	}
 
 	if err == io.ErrUnexpectedEOF {
+		// Just an end of the file. Skip this error
 		err = nil
 	}
-	return
+	return err
 }
 
 func worker(pathCH <-chan string, wg *sync.WaitGroup, targetExt string, cryptor func(*lkf.Cryptor, []byte) int) {
 	defer wg.Done()
 	for path := range pathCH {
-		f, err := os.OpenFile(path, os.O_RDWR, 0644)
-		if err != nil {
+		targetPath := path[:len(path)-4] + targetExt
+		tmpPath := targetPath + ".tmp"
+		if err := os.Rename(path, tmpPath); err != nil {
 			log.Printf("worker: %v", err)
 			continue
 		}
 
-		err = FileCryptor(f, cryptor)
-		f.Close()
-		if err != nil {
+		if err := FileCryptor(tmpPath, cryptor); err != nil {
 			log.Printf("worker: %v", err)
 			continue
 		}
 
-		if err := os.Rename(path, path[:len(path)-4]+targetExt); err != nil {
+		if err := os.Rename(tmpPath, targetPath); err != nil {
 			log.Printf("worker: %v", err)
 		}
 	}
@@ -95,8 +102,8 @@ func main() {
 		go worker(pathCH, wg, targetExt, cryptor)
 	}
 
-	walker := func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || strings.ToLower(filepath.Ext(path)) != srcExt {
+	walker := func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || strings.ToLower(filepath.Ext(path)) != srcExt {
 			return err
 		}
 		fileCounter++
@@ -106,7 +113,7 @@ func main() {
 
 	log.Printf("Please wait...\n")
 	start := time.Now()
-	if err := filepath.Walk(args[2], walker); err != nil {
+	if err := filepath.WalkDir(args[2], walker); err != nil {
 		log.Printf("Filewalker: %s\n", err)
 	}
 
