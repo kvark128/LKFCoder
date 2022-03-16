@@ -2,9 +2,9 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -58,33 +58,39 @@ func worker(pathCH <-chan string, wg *sync.WaitGroup, targetExt string, cryptor 
 		targetPath := path[:len(path)-4] + targetExt
 		tmpPath := targetPath + ".tmp"
 		if err := os.Rename(path, tmpPath); err != nil {
-			log.Printf("worker: %v", err)
+			fmt.Printf("worker: %v\n", err)
 			continue
 		}
 
 		if err := FileCryptor(tmpPath, cryptor); err != nil {
-			log.Printf("worker: %v", err)
+			fmt.Printf("worker: %v\n", err)
 			continue
 		}
 
 		if err := os.Rename(tmpPath, targetPath); err != nil {
-			log.Printf("worker: %v", err)
+			fmt.Printf("worker: %v\n", err)
 		}
 	}
 }
 
 func main() {
-	var args = []string{2: "./"}
-	copy(args, os.Args)
-
+	var action string
 	var fileCounter int
 	var srcExt, targetExt string
+	var cryptor func(*lkf.Cryptor, []byte) int
 	wg := new(sync.WaitGroup)
 	pathCH := make(chan string)
-	var cryptor func(*lkf.Cryptor, []byte) int
+	workingDir := "./"
 
-	log.SetFlags(0)
-	switch args[1] {
+	if len(os.Args) >= 2 {
+		action = os.Args[1]
+	}
+
+	if len(os.Args) >= 3 {
+		workingDir = os.Args[2]
+	}
+
+	switch action {
 	case "decode":
 		cryptor = func(c *lkf.Cryptor, data []byte) int { return c.Decrypt(data, data) }
 		srcExt = ".lkf"
@@ -94,7 +100,8 @@ func main() {
 		srcExt = ".mp3"
 		targetExt = ".lkf"
 	default:
-		log.Fatal("An unsupported action is specified. Must be decode or encode")
+		fmt.Printf("Unsupported action specified\n")
+		os.Exit(1)
 	}
 
 	for n := runtime.NumCPU(); n > 0; n-- {
@@ -111,13 +118,13 @@ func main() {
 		return nil
 	}
 
-	log.Printf("Please wait...\n")
 	start := time.Now()
-	if err := filepath.WalkDir(args[2], walker); err != nil {
-		log.Printf("Filewalker: %s\n", err)
+	if err := filepath.WalkDir(workingDir, walker); err != nil {
+		fmt.Printf("Filewalker: %v\n", err)
 	}
 
 	close(pathCH)
 	wg.Wait()
-	log.Printf("Processed %d *%s files in %v\n", fileCounter, srcExt, time.Since(start))
+	finish := time.Since(start)
+	fmt.Printf("Processed %d *%s files in %v\n", fileCounter, srcExt, finish)
 }
