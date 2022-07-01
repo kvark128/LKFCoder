@@ -30,10 +30,20 @@ func FileCryptor(path string, cryptor CryptorFunc) error {
 	for err == nil {
 		err = func() error {
 			n, err := io.ReadFull(f, buf)
-			if err != nil && err != io.ErrUnexpectedEOF {
-				// Fatal error when reading from file
-				// Processing must be aborted immediately
-				return err
+			if err != nil {
+				switch err {
+				case io.EOF:
+					// End of file. There is no more read data
+					return io.EOF
+				case io.ErrUnexpectedEOF:
+					// End of file, but there is read data
+					// We try to process them, and then return io.EOF
+					err = io.EOF
+				default:
+					// Fatal error when reading from file
+					// Processing must be aborted immediately
+					return err
+				}
 			}
 
 			// Encrypt or decrypt the read data
@@ -50,20 +60,20 @@ func FileCryptor(path string, cryptor CryptorFunc) error {
 		}()
 	}
 
-	if err != io.ErrUnexpectedEOF {
+	if err != io.EOF {
 		// Fatal error occurred while processing the file. Close the file and return this error
 		f.Close()
 		return err
 	}
 
-	// Just the end of the file with no errors. Closing it
+	// Just the end of the file with io.EOF. Closing it
 	return f.Close()
 }
 
 func worker(pathCH <-chan string, wg *sync.WaitGroup, logger *log.Logger, targetExt string, cryptor CryptorFunc) {
 	defer wg.Done()
 	for path := range pathCH {
-		targetPath := path[:len(path)-4] + targetExt
+		targetPath := strings.TrimSuffix(path, filepath.Ext(path)) + targetExt
 		tmpPath := targetPath + ".tmp"
 		if err := os.Rename(path, tmpPath); err != nil {
 			logger.Printf("worker: %v\n", err)
