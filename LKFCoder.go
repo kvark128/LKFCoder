@@ -28,36 +28,30 @@ func FileCryptor(path string, cryptor CryptorFunc) error {
 	var off int64
 
 	for err == nil {
-		err = func() error {
-			n, err := io.ReadFull(f, buf)
-			if err != nil {
-				switch err {
-				case io.EOF:
-					// End of file. There is no more read data
-					return io.EOF
-				case io.ErrUnexpectedEOF:
-					// End of file, but there is read data
-					// We try to process them, and then return io.EOF
-					err = io.EOF
-				default:
-					// Fatal error when reading from file
-					// Processing must be aborted immediately
-					return err
-				}
+		var n int
+		n, err = io.ReadFull(f, buf)
+		if err != nil {
+			if err != io.ErrUnexpectedEOF {
+				// Fatal error when reading from file or end of file without data
+				// Processing must be aborted immediately
+				break
 			}
+			// End of file, but there is read data
+			// We try to process them, and then break with io.EOF
+			err = io.EOF
+		}
 
-			// Encrypt or decrypt the read data
-			// Processed data should be written back to the file instead of the previously read ones
-			if np := cryptor(c, buf[:n]); np != 0 {
-				if _, err := f.WriteAt(buf[:np], off); err != nil {
-					// Fatal error when writing to file
-					// Processing must be aborted immediately
-					return err
-				}
-				off += int64(np)
+		// Encrypt or decrypt the read data
+		// Processed data should be written back to the file instead of the previously read ones
+		if np := cryptor(c, buf[:n]); np != 0 {
+			if _, wErr := f.WriteAt(buf[:np], off); wErr != nil {
+				// Fatal error when writing to file
+				// Processing must be aborted immediately
+				err = wErr
+				break
 			}
-			return err
-		}()
+			off += int64(np)
+		}
 	}
 
 	if err != io.EOF {
