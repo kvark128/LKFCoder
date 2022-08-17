@@ -117,7 +117,13 @@ func main() {
 		logger.Fatalf("Unsupported action specified\n")
 	}
 
-	for n := runtime.NumCPU(); n > 0; n-- {
+	numCPU := runtime.NumCPU()
+	if numCPU <= 0 {
+		// Very strange bug, but we have to foresee it
+		logger.Fatalf("No available CPUs\n")
+	}
+
+	for n := 0; n < numCPU; n++ {
 		wg.Add(1)
 		go worker(pathCH, wg, logger, targetExt, cryptor)
 	}
