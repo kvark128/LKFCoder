@@ -2,6 +2,7 @@
 package main
 
 import (
+	"flag"
 	"io"
 	"io/fs"
 	"log"
@@ -87,24 +88,19 @@ func worker(pathCH <-chan string, wg *sync.WaitGroup, logger *log.Logger, target
 }
 
 func main() {
-	var action string
 	var fileCounter int
 	var srcExt, targetExt string
 	var cryptor CryptorFunc
 	wg := new(sync.WaitGroup)
 	pathCH := make(chan string)
-	workingDir := "./"
 	logger := log.New(os.Stdout, "", 0)
 
-	if len(os.Args) >= 2 {
-		action = os.Args[1]
-	}
+	verbose := flag.Bool("v", false, "")
+	flag.Parse()
+	cmd := flag.Arg(0)
+	targetPath := flag.Arg(1)
 
-	if len(os.Args) >= 3 {
-		workingDir = os.Args[2]
-	}
-
-	switch action {
+	switch cmd {
 	case "decode":
 		cryptor = func(c *lkf.Cryptor, data []byte) int { return c.Decrypt(data, data) }
 		srcExt = ".lkf"
@@ -114,7 +110,15 @@ func main() {
 		srcExt = ".mp3"
 		targetExt = ".lkf"
 	default:
-		logger.Fatalf("Unsupported action specified\n")
+		logger.Fatalf("Unsupported command specified\n")
+	}
+
+	if targetPath == "" {
+		var err error
+		targetPath, err = os.Getwd()
+		if err != nil {
+			logger.Fatalf("Unable to get current working directory: %v\n", err)
+		}
 	}
 
 	numCPU := runtime.NumCPU()
@@ -129,21 +133,30 @@ func main() {
 	}
 
 	walker := func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || strings.ToLower(filepath.Ext(path)) != srcExt {
+		if err != nil || d.IsDir() {
 			return err
 		}
-		fileCounter++
-		pathCH <- path
+		if strings.ToLower(filepath.Ext(path)) == srcExt {
+			fileCounter++
+			pathCH <- path
+		}
 		return nil
 	}
 
 	start := time.Now()
-	if err := filepath.WalkDir(workingDir, walker); err != nil {
+	if *verbose {
+		logger.Printf("Start processing with %d workers on path %v\n", numCPU, targetPath)
+	}
+
+	if err := filepath.WalkDir(targetPath, walker); err != nil {
 		logger.Printf("Filewalker: %v\n", err)
 	}
 
 	close(pathCH)
 	wg.Wait()
+
 	finish := time.Since(start)
-	logger.Printf("Processed %d *%s files in %v\n", fileCounter, srcExt, finish)
+	if *verbose {
+		logger.Printf("Processed %d *%s files in %v\n", fileCounter, srcExt, finish)
+	}
 }
