@@ -16,6 +16,23 @@ import (
 	"github.com/kvark128/lkf"
 )
 
+const UsageString = `Использование: %v [опции] <команда> [путь...]
+
+Опции:
+ -v    Включает подробный вывод журнала работы программы.
+ -w=<число>    Задаёт число горутин-воркеров.
+  По умолчанию число горутин равно числу доступных в системе логических процессоров.
+
+Команда:
+ decode    Декодирование lkf-файлов в mp3
+ encode    Кодирование mp3-файлов в lkf
+
+Путь: Один или более путей к обрабатываемым файлам или каталогам.
+ Требуемые файлы определяются по расширению имени файла. *.lkf при декодировании и *.mp3 при кодировании.
+ Если в качестве пути указан каталог, то поиск нужных файлов будет выполнен рекурсивно во всех вложенных подкаталогах.
+ Если ни один путь не указан, то для поиска файлов будет использоваться текущий рабочий каталог.
+`
+
 type CryptorFunc func(*lkf.Cryptor, []byte) int
 
 func FileCryptor(path string, cryptor CryptorFunc) error {
@@ -95,11 +112,20 @@ func main() {
 	pathCH := make(chan string)
 	logger := log.New(os.Stdout, "", 0)
 
-	verbose := flag.Bool("v", false, "")
+	var verbosityFlag bool
+	var numWorkersFlag int
+	flag.BoolVar(&verbosityFlag, "v", false, "")
+	flag.IntVar(&numWorkersFlag, "w", runtime.NumCPU(), "")
+	flag.Usage = func() {
+		logger.Printf(UsageString, os.Args[0])
+	}
 	flag.Parse()
-	cmd := flag.Arg(0)
-	targetPath := flag.Arg(1)
 
+	if numWorkersFlag <= 0 {
+		logger.Fatalf("No available workers\n")
+	}
+
+	cmd := flag.Arg(0)
 	switch cmd {
 	case "decode":
 		cryptor = func(c *lkf.Cryptor, data []byte) int { return c.Decrypt(data, data) }
@@ -113,21 +139,19 @@ func main() {
 		logger.Fatalf("Unsupported command specified\n")
 	}
 
-	if targetPath == "" {
-		var err error
-		targetPath, err = os.Getwd()
+	// The first argument is the command. Paths are all arguments after the command.
+	// Note that if the user did not specify a command, then the next line will cause a panic!
+	paths := flag.Args()[1:]
+
+	if len(paths) == 0 {
+		wd, err := os.Getwd()
 		if err != nil {
 			logger.Fatalf("Unable to get current working directory: %v\n", err)
 		}
+		paths = append(paths, wd)
 	}
 
-	numCPU := runtime.NumCPU()
-	if numCPU <= 0 {
-		// Very strange bug, but we have to foresee it
-		logger.Fatalf("No available CPUs\n")
-	}
-
-	for n := 0; n < numCPU; n++ {
+	for n := 0; n < numWorkersFlag; n++ {
 		wg.Add(1)
 		go worker(pathCH, wg, logger, targetExt, cryptor)
 	}
@@ -144,19 +168,25 @@ func main() {
 	}
 
 	start := time.Now()
-	if *verbose {
-		logger.Printf("Start processing with %d workers on path %v\n", numCPU, targetPath)
+	if verbosityFlag {
+		logger.Printf("Start processing with %d workers\n", numWorkersFlag)
 	}
 
-	if err := filepath.WalkDir(targetPath, walker); err != nil {
-		logger.Printf("Filewalker: %v\n", err)
+	for _, path := range paths {
+		if verbosityFlag {
+			logger.Printf("Walking by path: %v\n", path)
+		}
+		if err := filepath.WalkDir(path, walker); err != nil {
+			logger.Printf("Filewalker: %v\n", err)
+			break
+		}
 	}
 
 	close(pathCH)
 	wg.Wait()
 
 	finish := time.Since(start)
-	if *verbose {
+	if verbosityFlag {
 		logger.Printf("Processed %d *%s files in %v\n", fileCounter, srcExt, finish)
 	}
 }
