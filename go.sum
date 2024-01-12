@@ -1,2 +1,4 @@
 github.com/kvark128/lkf v0.0.0-20200906212533-0cc542d11ec8 h1:Aqw38uFO5FQwpLG2w0+7ot7GYIFtoYiiKN54Nvshbfk=
 github.com/kvark128/lkf v0.0.0-20200906212533-0cc542d11ec8/go.mod h1:XYk24siMM2Awb3zhupGfdS62SqWOrDFMtx7Cg7C2KeU=
+github.com/kvark128/lkf v0.1.0 h1:BrEs99qwxBGu2Q9opM5tMINQ+cmReHDVnAwW72ZKGvM=
+github.com/kvark128/lkf v0.1.0/go.mod h1:EoTvxv8P2E0nuGCCpYT3nEP/XJYXQobZ5k2t6IKkG+Y=
